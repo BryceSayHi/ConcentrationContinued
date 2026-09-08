@@ -19,6 +19,9 @@
     ],
     "modmenu" : [
       "net.deechael.concentration.fabric.compat.ModMenuCompat"
+    ],
+    "sodium:config_api_user": [
+    "net.deechael.concentration.fabric.compat.ConcentrationSodiumConfig"
     ]
   },
   "mixins": [
