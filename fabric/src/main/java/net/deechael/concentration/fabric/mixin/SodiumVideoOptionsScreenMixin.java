@@ -1,84 +1,50 @@
-package net.deechael.concentration.fabric.mixin;
+package net.deechael.concentration.fabric.compat;
 
-import com.google.common.collect.ImmutableList;
-import me.jellysquid.mods.sodium.client.gui.SodiumGameOptionPages;
-import me.jellysquid.mods.sodium.client.gui.options.Option;
-import me.jellysquid.mods.sodium.client.gui.options.OptionGroup;
-import me.jellysquid.mods.sodium.client.gui.options.OptionImpl;
-import me.jellysquid.mods.sodium.client.gui.options.control.CyclingControl;
-import me.jellysquid.mods.sodium.client.gui.options.control.TickBoxControl;
-import me.jellysquid.mods.sodium.client.gui.options.storage.MinecraftOptionsStorage;
+import net.caffeinemc.mods.sodium.api.config.ConfigEntryPoint;
+import net.caffeinemc.mods.sodium.api.config.structure.ConfigBuilder;
 import net.deechael.concentration.Concentration;
 import net.deechael.concentration.FullscreenMode;
 import net.deechael.concentration.fabric.config.ConcentrationConfigFabric;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.Options;
 import net.minecraft.network.chat.Component;
-import net.minecraft.network.chat.contents.TranslatableContents;
-import org.spongepowered.asm.mixin.Final;
-import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.Shadow;
-import org.spongepowered.asm.mixin.injection.At;
-import org.spongepowered.asm.mixin.injection.ModifyArg;
-
-import java.util.ArrayList;
-import java.util.List;
+import net.minecraft.resources.Identifier;
 
 /**
- * Hooks sodium options to make sure that changing fullscreen behaviour will use Concentration function instead of vanilla function
- *
- * @author DeeChael
+ * Sodium 0.8+ config API entrypoint. Replaces SodiumVideoOptionsScreenMixin,
+ * which mixed into Sodium's now-removed SodiumGameOptionPages internals.
  */
-@Mixin(SodiumGameOptionPages.class)
-public class SodiumVideoOptionsScreenMixin {
+public class ConcentrationSodiumConfig implements ConfigEntryPoint {
 
-    @Shadow(remap = false)
-    @Final
-    private static MinecraftOptionsStorage vanillaOpts;
-
-    @ModifyArg(method = "general", at = @At(value = "INVOKE", target = "Lme/jellysquid/mods/sodium/client/gui/options/OptionPage;<init>(Lnet/minecraft/network/chat/Component;Lcom/google/common/collect/ImmutableList;)V"), index = 1)
-    private static ImmutableList<OptionGroup> inject$general(ImmutableList<OptionGroup> groups) {
-        List<OptionGroup> newGroups = new ArrayList<>();
-
-        for (OptionGroup group : groups) {
-            OptionGroup.Builder builder = OptionGroup.createBuilder();
-            for (Option<?> option : group.getOptions()) {
-                if (option.getName().getContents() instanceof TranslatableContents translatableContents) {
-                    if (translatableContents.getKey().equals("options.fullscreen")) {
-                        builder.add(
-                                OptionImpl.createBuilder(FullscreenMode.class, vanillaOpts)
+    @Override
+    public void registerConfigLate(ConfigBuilder builder) {
+        builder.registerOwnModOptions()
+                .addPage(builder.createOptionPage()
+                        .setName(Component.literal("Concentration"))
+                        .addOptionGroup(builder.createOptionGroup()
+                                .addOption(builder.createEnumOption(Identifier.parse("concentration:fullscreen_mode"), FullscreenMode.class)
                                         .setName(Component.translatable("concentration.option.fullscreen_mode"))
                                         .setTooltip(Component.translatable("concentration.option.fullscreen_mode.tooltip"))
-                                        .setControl((opt) -> new CyclingControl<>(opt, FullscreenMode.class, new Component[]{
-                                                Component.translatable("concentration.option.fullscreen_mode.borderless"),
-                                                Component.translatable("concentration.option.fullscreen_mode.native")
-                                        }))
-                                        .setBinding((options, value) -> {
-                                                    ConcentrationConfigFabric.getInstance().fullscreen = value;
-                                                    ConcentrationConfigFabric.getInstance().save();
-                                                    if (options.fullscreen().get()) {
-                                                        // If fullscreen turns on, re-toggle to changing the fullscreen mode instantly
-                                                        Concentration.toggleFullScreenMode(options, true);
-                                                    }
-                                                },
-                                                (options) -> ConcentrationConfigFabric.getInstance().fullscreen
+                                        .setElementNameProvider(mode -> Component.translatable(mode.getKey()))
+                                        .setDefaultValue(FullscreenMode.BORDERLESS)
+                                        .setBinding(
+                                                ConcentrationSodiumConfig::onFullscreenModeChanged,
+                                                () -> ConcentrationConfigFabric.getInstance().fullscreen
                                         )
-                                        .build()
-                        ).add(
-                                OptionImpl.createBuilder(boolean.class, vanillaOpts)
-                                        .setName(Component.translatable("options.fullscreen"))
-                                        .setTooltip(Component.translatable("sodium.options.fullscreen.tooltip"))
-                                        .setControl(TickBoxControl::new)
-                                        .setBinding(Concentration::toggleFullScreenMode, (options) -> options.fullscreen().get())
-                                        .build()
-                        );
-                        continue;
-                    }
-                }
-                builder.add(option);
-            }
-            newGroups.add(builder.build());
-        }
-
-        return ImmutableList.copyOf(newGroups);
+                                )
+                        )
+                );
     }
 
+    private static void onFullscreenModeChanged(FullscreenMode value) {
+        ConcentrationConfigFabric config = ConcentrationConfigFabric.getInstance();
+        config.fullscreen = value;
+        config.save();
+
+        Options options = Minecraft.getInstance().options;
+        if (options.fullscreen().get()) {
+            // Already fullscreen — re-apply now so the switch is visible immediately
+            Concentration.toggleFullScreenMode(options, true);
+        }
+    }
 }
